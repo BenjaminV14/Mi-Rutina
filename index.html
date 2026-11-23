@@ -224,7 +224,7 @@ body.kbopen{padding-bottom:300px}
       <div class="date" id="date"></div>
       <h1>Rutina diaria</h1>
     </div>
-    <div class="sync" id="sync">Guardado en este teléfono</div>
+    <div style="text-align:right"><div class="sync" id="sync">Guardado en este teléfono</div><div class="sync" id="ver">versión 3</div></div>
   </header>
   <div class="savewarn" id="saveWarn" hidden role="alert"><b id="saveWarnT"></b><span id="saveWarnD"></span></div>
 
@@ -574,7 +574,8 @@ const typingIn=sel=>{const a=document.activeElement;if(a&&a.closest&&a.closest(s
    En algunos teléfonos el teclado del sistema no se abre en esta app.
    Este teclado escribe directo en los campos, sin necesitar el del teléfono. */
 const KB={field:null,shift:true,acc:false,buf:"",on:false};
-try{const v=localStorage.getItem("rutina-kb");KB.on=v?v==="1":matchMedia("(pointer: coarse)").matches}catch(e){KB.on=matchMedia("(pointer: coarse)").matches}
+const isTouch=("ontouchstart" in window)||navigator.maxTouchPoints>0||matchMedia("(pointer: coarse)").matches;
+try{const v=localStorage.getItem("rutina-kb3");KB.on=v?v==="1":isTouch}catch(e){KB.on=isTouch}
 const kbTypes=new Set(["text","search","number","time","date",""]);
 const kbOK=el=>el&&el.tagName==="INPUT"&&kbTypes.has(el.getAttribute("type")||"")&&el.id;
 const ACC={a:"á",e:"é",i:"í",o:"ó",u:"ú",A:"Á",E:"É",I:"Í",O:"Ó",U:"Ú"};
@@ -633,16 +634,19 @@ function kbPress(k){
     if(v.length<max)v+=c}
   kbSet(el,v);kbDraw();
 }
-document.getElementById("kbKeys").addEventListener("pointerdown",e=>{const b=e.target.closest("button.k");if(!b)return;e.preventDefault();kbPress(b.dataset.k)});
+function kbKey(e){const b=e.target.closest&&e.target.closest("button.k");if(!b)return;if(e.cancelable)e.preventDefault();kbPress(b.dataset.k)}
+document.getElementById("kbKeys").addEventListener(window.PointerEvent?"pointerdown":"touchstart",kbKey,{passive:false});
 document.getElementById("kbKeys").addEventListener("click",e=>{if(e.detail===0){const b=e.target.closest("button.k");if(b)kbPress(b.dataset.k)}}); // teclado físico / lector
-$("#kbNative").onclick=()=>{KB.on=false;try{localStorage.setItem("rutina-kb","0")}catch(e){}const f=kbField();kbClose();kbApply();if(f){f.focus()}};
+$("#kbNative").onclick=()=>{KB.on=false;try{localStorage.setItem("rutina-kb3","0")}catch(e){}const f=kbField();kbClose();kbApply();if(f){f.focus()}};
 function kbApply(){document.querySelectorAll("input").forEach(el=>{if(kbOK(el)){if(KB.on)el.setAttribute("inputmode","none");else el.removeAttribute("inputmode")}})}
-document.addEventListener("pointerdown",e=>{
-  if(!KB.on)return;const el=e.target.closest&&e.target.closest("input");
-  if(kbOK(el)){e.preventDefault();if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();kbOpen(el);return}
-  if(!$("#kb").hidden&&!e.target.closest("#kb")&&!e.target.closest("label"))kbClose();
-},{capture:true});
-document.addEventListener("click",e=>{if(!KB.on)return;const el=e.target.closest&&e.target.closest("input");if(kbOK(el))e.preventDefault()},{capture:true});
+function kbTap(e){
+  if(!KB.on)return;const t=e.target&&e.target.closest?e.target:null;if(!t)return;
+  const lab=t.closest("label"),el=t.closest("input")||(lab&&lab.querySelector("input"));
+  if(kbOK(el)){if(e.cancelable)e.preventDefault();if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();if(KB.field!==el.id||$("#kb").hidden)kbOpen(el);return}
+  if(e.type!=="click"&&!$("#kb").hidden&&!t.closest("#kb"))kbClose();
+}
+["touchstart","pointerdown","mousedown","click"].forEach(ev=>document.addEventListener(ev,kbTap,{capture:true,passive:false}));
+document.addEventListener("focusin",e=>{if(KB.on&&kbOK(e.target)){const el=e.target;el.blur();kbOpen(el)}},true);
 new MutationObserver(()=>{kbApply();if(KB.field&&!kbField())kbClose();else if(KB.field){const f=kbField();if(!f.classList.contains("kbfield"))f.classList.add("kbfield")}}).observe(document.body,{childList:true,subtree:true});
 function renderToday(){
   if(typingIn("#wordForm")){state.pendingRender=true;return} // no cerrar el teclado mientras escribes
@@ -869,7 +873,7 @@ function renderQuiz(){
   b.appendChild(next);
 }
 function renderKbSeg(){document.querySelectorAll("#kbSeg button").forEach(b=>{b.setAttribute("aria-pressed",(b.dataset.v==="1")===KB.on);
-  b.onclick=()=>{KB.on=b.dataset.v==="1";try{localStorage.setItem("rutina-kb",KB.on?"1":"0")}catch(e){}kbClose();kbApply();renderKbSeg()}})}
+  b.onclick=()=>{KB.on=b.dataset.v==="1";try{localStorage.setItem("rutina-kb3",KB.on?"1":"0")}catch(e){}kbClose();kbApply();renderKbSeg()}})}
 function renderPlan(){
   renderKbSeg();
   const seg=$("#fastSeg"); seg.innerHTML="";
@@ -1075,7 +1079,10 @@ setInterval(()=>{if(!state.viewDate&&!state.wordEdit&&$("#quiz").hidden)renderTo
   try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist()}catch(e){}
   $("#sync").textContent=lsOK?"Guardado en este teléfono":"Sin guardar";
   if(!lsOK)warn("No se puede guardar","Tu navegador está bloqueando el almacenamiento. Si estás en modo privado, ábrela en una pestaña normal.");
-  if("serviceWorker" in navigator&&location.protocol==="https:"){try{await navigator.serviceWorker.register("sw.js")}catch(e){}}
+  if("serviceWorker" in navigator&&location.protocol==="https:"){
+    let reloaded=false;const hadCtrl=!!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadCtrl&&!reloaded){reloaded=true;location.reload()}});
+    try{const r=await navigator.serviceWorker.register("sw.js",{updateViaCache:"none"});r.update()}catch(e){}}
 })();
 </script>
 

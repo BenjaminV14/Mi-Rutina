@@ -1,16 +1,16 @@
 // Guarda la app para que abra sin internet. Sube CACHE cuando cambie index.html.
-const CACHE = "rutina-v2";
+const CACHE = "rutina-v3";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
-self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
+self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, {cache: "reload"}))))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))));
-  self.clients.claim();
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
-// Red primero (para recibir actualizaciones), caché si no hay conexión
+// Siempre pide la versión más nueva al servidor (sin caché del navegador); sin internet usa la guardada
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
-  e.respondWith(fetch(e.request).then(r => {
-    if (r.ok && new URL(e.request.url).origin === location.origin) { const cp = r.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); }
+  const same = new URL(e.request.url).origin === location.origin;
+  e.respondWith(fetch(same ? new Request(e.request, {cache: "no-store"}) : e.request).then(r => {
+    if (r.ok && same) { const cp = r.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); }
     return r;
-  }).catch(() => caches.match(e.request).then(m => m || caches.match("index.html"))));
+  }).catch(() => caches.match(e.request, {ignoreSearch: true}).then(m => m || caches.match("index.html"))));
 });
